@@ -120,6 +120,15 @@ textarea{width:100%;min-height:90px;border:1px solid var(--line);border-radius:1
 .saved{text-align:center;font-size:12px;color:var(--sub);margin-top:18px}
 .trick-ex{font-size:20px;font-weight:700;text-align:center;padding:10px;border:1px dashed var(--line);border-radius:12px;margin:10px 0}
 ol.steps-ol{padding-left:20px;margin:8px 0}
+.lvbar{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;margin-top:6px}
+.lvbar i{height:6px;border-radius:3px;background:var(--line)}
+.lvbar i.on{background:var(--accent)}
+.lvrow{display:flex;align-items:center;gap:12px;margin-top:14px}
+.lvrow>div{flex:1;min-width:0;text-align:center}
+.lvrow b{font-size:22px}
+.item .lvchip{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap}
+.pop{animation:pop .18s ease}
+@keyframes pop{from{transform:scale(.8);opacity:.2}}
 ol.steps-ol li{margin:4px 0}
 @media (max-width:360px){
   .grid{gap:6px} .tile b{font-size:18px} .pad button{padding:13px 0}
@@ -181,10 +190,57 @@ const TRICKS=[
    gen:()=>{const t=rand(1,9),u=rand(1,9);return{q:`${t}${u} × ${t}${10-u}`,a:(t*10+u)*(t*10+10-u)};}}
 ];
 
+/* 암산 훈련장: 종목마다 Lv.1~10, 잘하면 레벨 업 */
+const nd=d=>rand(10**(d-1),10**d-1);
+const ADD=[[1,1],[2,1],[2,2],[2,2],[3,2],[3,3],[2,2,2],[3,3,2],[4,3],[4,4]];
+const MUL=[[2,9,2,9],[1,9,2,9],[11,19,2,9],[21,99,2,9],[101,299,2,9],[300,999,2,9],[11,19,11,19],[21,49,11,19],[21,99,11,29],[21,99,21,99]];
+const DIV=[[2,5,2,9],[2,9,2,9],[2,9,10,19],[2,9,10,30],[2,9,10,99],[2,9,100,199],[11,19,2,9],[11,19,10,30],[2,9,100,999],[11,99,11,50]];
+const FL=[[3,1,1200],[4,1,1100],[5,1,1000],[3,2,1100],[4,2,1000],[5,2,900],[6,2,800],[4,3,1000],[5,3,900],[7,2,650]];
+const DRILLS=[
+  {id:'make10',name:'짝꿍 수 찾기',sub:'10 · 100 · 1000을 만드는 수',hint:'100 짝꿍: 십의 자리는 합 9, 일의 자리는 합 10',
+   tip:'모든 암산의 기본기예요. 7의 짝꿍은 3(합 10), 64의 짝꿍은 36(합 100). 100의 짝꿍은 "십의 자리는 합 9, 일의 자리는 합 10"으로 찾아요: 64 → 6의 짝 3, 4의 짝 6 → 36.',
+   gen:lv=>{if(lv<=3){const a=rand(1,9);return{q:`${a} + ? = 10`,a:10-a};}
+     if(lv<=7){const a=rand(11,99);return{q:`${a} + ? = 100`,a:100-a};}
+     const a=rand(101,999);return{q:`${a} + ? = 1000`,a:1000-a};}},
+  {id:'add',name:'덧셈 암산',sub:'큰 자리부터 더하기',hint:'큰 자리끼리 먼저, 그다음 작은 자리',
+   tip:'왼쪽(큰 자리)부터 더해요. 47 + 38 → 40 + 30 = 70, 7 + 8 = 15 → 70 + 15 = 85. 세 수를 더할 땐 합이 10이 되는 짝꿍끼리 먼저 묶어요.',
+   gen:lv=>{const ds=ADD[lv-1];let ns;
+     do{ns=ds.map(nd);}while((lv===3&&ns[0]%10+ns[1]%10>=10)||(lv===4&&ns[0]%10+ns[1]%10<10));
+     return{q:ns.join(' + '),a:ns.reduce((x,y)=>x+y,0)};}},
+  {id:'sub',name:'뺄셈 암산',sub:'넉넉하게 빼고 되돌리기',hint:'28은 30으로 빼고 2를 다시 더하기',
+   tip:'딱 떨어지는 수로 넉넉하게 빼고, 더 뺀 만큼 되돌려요. 63 − 28 → 63 − 30 = 33, 2를 더 뺐으니 + 2 → 35. 100 − 수, 1000 − 수는 짝꿍 수로 바로 답해요.',
+   gen:lv=>{let a,b;switch(lv){
+     case 1:a=rand(11,18);b=rand(a-9,9);break;
+     case 2:a=nd(2);b=rand(2,9);break;
+     case 3:do{a=nd(2);b=nd(2);}while(b>=a||b%10>a%10);break;
+     case 4:do{a=nd(2);b=nd(2);}while(b>=a||b%10<=a%10);break;
+     case 5:a=100;b=nd(2);break;
+     case 6:a=nd(3);b=nd(2);break;
+     case 7:do{a=nd(3);b=nd(3);}while(b>=a);break;
+     case 8:a=1000;b=nd(3);break;
+     case 9:a=nd(4);b=nd(3);break;
+     default:do{a=nd(4);b=nd(4);}while(b>=a);}
+     return{q:`${a} − ${b}`,a:a-b};}},
+  {id:'mul',name:'곱셈 암산',sub:'쪼개서 곱하기',hint:'큰 자리와 작은 자리로 쪼개서 곱한 뒤 더하기',
+   tip:'수를 쪼개서 곱해요. 24 × 6 → 20 × 6 = 120, 4 × 6 = 24 → 144. 두 자리끼리는 23 × 14 → 23 × 10 = 230, 23 × 4 = 92 → 322.',
+   gen:lv=>{const[a1,a2,b1,b2]=MUL[lv-1];const a=lv===2?rand(a1,a2)*10:rand(a1,a2),b=rand(b1,b2);return{q:`${a} × ${b}`,a:a*b};}},
+  {id:'div',name:'나눗셈 암산',sub:'구구단 거꾸로 + 쪼개기',hint:'나누는 수 × ? = 나눠지는 수',
+   tip:'구구단을 거꾸로 써요. 56 ÷ 7 → 7 × ? = 56 → 8. 큰 수는 쪼개요: 84 ÷ 4 → 80 ÷ 4 = 20, 4 ÷ 4 = 1 → 21.',
+   gen:lv=>{const[d1,d2,q1,q2]=DIV[lv-1];const d=rand(d1,d2),q=rand(q1,q2);return{q:`${q*d} ÷ ${d}`,a:q};}},
+  {id:'mix',name:'섞어 암산',sub:'+ − × ÷ 무작위',hint:'',
+   tip:'덧셈·뺄셈·곱셈·나눗셈이 섞여 나와요. 문제를 보자마자 어떤 방법을 쓸지 고르는 연습이에요.',
+   gen:lv=>{const d=DRILLS[rand(1,4)];return Object.assign(d.gen(lv),{hint:d.hint});}},
+  {id:'flash',name:'플래시 암산',sub:'숫자가 번쩍! 머릿속으로 계속 더하기',hint:'',flash:true,
+   tip:'숫자가 하나씩 나타났다 사라져요. 종이 없이 머릿속에서 합을 계속 이어 가다가, 마지막에 합을 입력해요. 집중력과 기억력이 같이 자라요.',
+   about:lv=>{const[c,dg,ms]=FL[lv-1];return`${dg}자리 숫자 ${c}개 · ${(ms/1000).toFixed(1)}초 간격`;},
+   gen:lv=>{const[c,dg,ms]=FL[lv-1];const ns=Array.from({length:c},()=>nd(dg));return{q:ns.join(' + '),a:ns.reduce((x,y)=>x+y,0),flash:ns,ms};}}
+];
+const drillSt=id=>S.drills[id]||{lv:1,max:1};
+
 /* ---------- 저장 ---------- */
 function defState(){
   const d={};DANS.forEach(n=>d[n]={learned:false,practiced:false,stars:0,best:null});
-  return{v:1,dans:d,facts:{},tricks:{},mix:{stars:0,best:null},speed:{best:0},total:0,correct:0,streak:0,lastDay:null,sound:true,savedAt:null};
+  return{v:1,dans:d,facts:{},tricks:{},drills:{},mix:{stars:0,best:null},speed:{best:0},total:0,correct:0,streak:0,lastDay:null,sound:true,savedAt:null};
 }
 function merge(a,b){for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])&&a[k]&&typeof a[k]==='object')a[k]=merge(a[k],b[k]);else a[k]=b[k];}return a;}
 function load(){try{const raw=localStorage.getItem(KEY);if(raw)return merge(defState(),JSON.parse(raw));}catch(e){}return defState();}
@@ -289,6 +345,12 @@ function home(){
   ${weak.length?`<button class="item" data-cb="${cb(startWeak)}"><div class="ico" style="background:var(--bad-soft);color:var(--bad)">!</div>
     <div class="txt"><b>약점 복습 (${weak.length}개)</b><span>자주 틀린 문제만 모아서 다시</span></div><span class="st">›</span></button>`:''}
 
+  <h2>암산 훈련장 · 언제든 열려 있어요</h2>
+  ${DRILLS.map(d=>{const st=drillSt(d.id);return`<button class="item" data-cb="${cb(()=>showDrill(d.id))}">
+    <div class="ico">${d.flash?'⚡':d.id==='make10'?'10':d.id==='mix'?'±':{add:'+',sub:'−',mul:'×',div:'÷'}[d.id]}</div>
+    <div class="txt"><b>${d.name}</b><span>${d.sub}</span><div class="lvbar">${Array.from({length:10},(_,i)=>`<i class="${i<st.lv?'on':''}"></i>`).join('')}</div></div>
+    <span class="lvchip">Lv.${st.lv}</span></button>`;}).join('')}
+
   <h2>1단계 · 구구단 외우기</h2>
   <div class="grid">${DANS.map(n=>{const d=S.dans[n],op=danOpen(n);
     return`<button class="tile ${op?'':'locked'} ${nx.dan===n?'now':''}" data-cb="${cb(()=>op?showDan(n):lockedMsg(`${n-1}단 시험을 먼저 통과하세요`))}">
@@ -346,6 +408,44 @@ function showTrick(id){
     <button class="btn" data-cb="${cb(()=>startTrick(id))}">연습 시작 (10문제)</button>`);
 }
 
+/* 암산 훈련 화면 */
+function showDrill(id){
+  const d=DRILLS.find(x=>x.id===id),st=drillSt(id);let lv=st.lv;
+  const draw=()=>{const ex=d.gen(lv);view(()=>`${topbar(true)}
+    <div class="card"><h3>${d.name}</h3><div class="muted">${d.sub}</div>
+      <div class="tip" style="margin-top:12px">💡 ${d.tip}</div>
+      <div class="lvrow">
+        <button class="iconbtn" aria-label="레벨 낮추기" data-cb="${cb(()=>{if(lv>1){lv--;draw();}})}">−</button>
+        <div><b>Lv.${lv}</b><span class="muted"> / 10</span><div class="lvbar">${Array.from({length:10},(_,i)=>`<i class="${i<lv?'on':''}"></i>`).join('')}</div></div>
+        <button class="iconbtn" aria-label="레벨 올리기" data-cb="${cb(()=>{if(lv<st.max){lv++;draw();}else toast(lv>=10?'최고 레벨이에요':`Lv.${lv}에서 ${d.flash?'5문제 중 4개':'10문제 중 9개'} 이상 맞히면 열려요`);})}">+</button>
+      </div>
+      <div class="trick-ex">${d.about?d.about(lv):'예: '+ex.q}</div>
+      <div class="muted" style="text-align:center">${d.flash?'5문제 중 4개':'10문제 중 9개'} 이상 맞히면 레벨 업 · 최고 기록 Lv.${st.max}</div></div>
+    <button class="btn" data-cb="${cb(()=>startDrill(id,lv))}">Lv.${lv} 시작 (${d.flash?5:10}문제)</button>`);};
+  draw();
+}
+function startDrill(id,lv){
+  const d=DRILLS.find(x=>x.id===id),n=d.flash?5:10;
+  const items=Array.from({length:n},()=>{const it=d.gen(lv);if(!it.hint&&d.hint)it.hint=d.hint;if(!it.hint)delete it.hint;return it;});
+  runQuiz({title:`${d.name} Lv.${lv}`,items,mode:'test',onDone:r=>{
+    const st=S.drills[id]||(S.drills[id]={lv:1,max:1});let nl=lv,msg;
+    if(n-r.correct<=1){if(lv<10){nl=lv+1;msg=`🎉 레벨 업! Lv.${lv} → Lv.${nl}`;}else msg='최고 레벨 완벽! 진짜 숫자 천재예요';}
+    else if(r.correct<=Math.floor(n/2)&&lv>1){nl=lv-1;msg=`Lv.${nl}에서 조금 더 다지고 올라가요`;}
+    else msg=`${d.flash?'4개':'9개'} 이상 맞히면 레벨 업이에요`;
+    st.lv=nl;st.max=Math.max(st.max,nl);save();
+    showResult({title:`${d.name} Lv.${lv}`,r,newStars:null,msg,
+      next:{label:`Lv.${nl} 계속하기`,fn:()=>startDrill(id,nl)},retry:()=>startDrill(id,lv)});}});
+}
+function playFlash(it){
+  const myQ=Q;Q.locked=true;let i=0;
+  const el=()=>document.getElementById('qtext');
+  const step=()=>{if(Q!==myQ||!el())return;
+    if(i<it.flash.length){const e=el();e.textContent=it.flash[i++];e.classList.remove('pop');void e.offsetWidth;e.classList.add('pop');
+      setTimeout(()=>{if(Q!==myQ||!el())return;el().textContent=' ';setTimeout(step,130);},it.ms-130);}
+    else{el().textContent='합은?';Q.locked=false;Q.qStart=performance.now();}};
+  setTimeout(step,800);
+}
+
 /* ---------- 문제 풀기 엔진 ---------- */
 let Q=null,timerId=null;
 function stopTimer(){if(timerId){clearInterval(timerId);timerId=null;}}
@@ -366,13 +466,14 @@ function drawQ(){
       ${Q.mode==='speed'?`<span class="timer" id="timer">${Math.max(0,Math.ceil((Q.endAt-Date.now())/1000))}초</span>`:`<span class="timer">${Q.mode==='speed'?'':Q.answered+'/'+(Q.answered+Q.queue.length)}</span>`}</div>
     <div class="qtitle">${Q.title}${Q.mode==='speed'?` · 맞힌 개수 <b>${Q.correct}</b>`:''}</div>
     <div class="card qbox" id="qcard">
-      <div class="q">${it.q}</div>
+      <div class="q" id="qtext">${it.flash?'<span class="muted" style="font-size:22px">준비…</span>':it.q}</div>
       <div class="ansline" id="ans">&nbsp;</div>
       <div class="fb" id="fb">${it.hint?(it.retry||Q.showHint?`<span class="muted">💡 ${it.hint}</span>`:`<button class="hintbtn" data-cb="${cb(()=>{document.getElementById('fb').innerHTML=`<span class="muted">💡 ${it.hint}</span>`;})}">힌트 보기</button>`):''}</div>
     </div>
     <div class="pad">${[1,2,3,4,5,6,7,8,9].map(k=>`<button data-k="${k}">${k}</button>`).join('')}
       <button class="fn" data-k="C">지우기</button><button data-k="0">0</button><button class="fn" data-k="B">⌫</button></div>`);
   timerId=keepTimer;
+  if(it.flash)playFlash(it);
 }
 function press(k){
   if(!Q||Q.locked)return;
