@@ -127,6 +127,19 @@ ol.steps-ol{padding-left:20px;margin:8px 0}
 .lvrow>div{flex:1;min-width:0;text-align:center}
 .lvrow b{font-size:22px}
 .item .lvchip{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap}
+.favbtn{background:none;border:0;font-size:20px;line-height:1;color:var(--lock);padding:2px 6px;margin-left:auto}
+.favbtn.on{color:var(--gold)}
+.fact .ans{margin-left:4px}
+.favlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.favchip{border:1px solid var(--gold);background:transparent;border-radius:10px;padding:6px 10px;font-size:15px;font-weight:600}
+.favchip span{color:var(--sub);margin-left:4px;font-size:12px}
+.pkrow{display:grid;grid-template-columns:32px repeat(9,minmax(0,1fr));gap:4px;align-items:center;margin-bottom:4px}
+.pkrow span{font-size:12px;color:var(--sub);font-weight:700}
+.pk{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 0;font-size:14px;font-weight:700;min-width:0}
+.pk.on{background:var(--gold);border-color:var(--gold);color:var(--accent-ink)}
+.mist button{border:0;background:var(--bad-soft);color:var(--bad);border-radius:8px;padding:4px 8px;font-size:14px;font-weight:600}
+.mist button.on{background:var(--gold);color:var(--accent-ink)}
+.flashcard{display:block;width:100%;color:inherit;font:inherit}
 .pop{animation:pop .18s ease}
 @keyframes pop{from{transform:scale(.8);opacity:.2}}
 ol.steps-ol li{margin:4px 0}
@@ -240,7 +253,7 @@ const drillSt=id=>S.drills[id]||{lv:1,max:1};
 /* ---------- 저장 ---------- */
 function defState(){
   const d={};DANS.forEach(n=>d[n]={learned:false,practiced:false,stars:0,best:null});
-  return{v:1,dans:d,facts:{},tricks:{},drills:{},mix:{stars:0,best:null},speed:{best:0},total:0,correct:0,streak:0,lastDay:null,sound:true,savedAt:null};
+  return{v:1,dans:d,facts:{},tricks:{},drills:{},favs:[],mix:{stars:0,best:null},speed:{best:0},total:0,correct:0,streak:0,lastDay:null,sound:true,savedAt:null};
 }
 function merge(a,b){for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])&&a[k]&&typeof a[k]==='object')a[k]=merge(a[k],b[k]);else a[k]=b[k];}return a;}
 function load(){try{const raw=localStorage.getItem(KEY);if(raw)return merge(defState(),JSON.parse(raw));}catch(e){}return defState();}
@@ -275,6 +288,15 @@ function touchDay(){
   S.streak=(S.lastDay===yesterday())?S.streak+1:1;S.lastDay=t;
 }
 const curStreak=()=>(S.lastDay===today()||S.lastDay===yesterday())?S.streak:0;
+
+/* ---------- 즐겨찾기 (못 외운 구구단) ---------- */
+const favHas=(a,b)=>S.favs.includes(`${a}x${b}`)||S.favs.includes(`${b}x${a}`);
+function favToggle(a,b,quiet){
+  if(favHas(a,b)){S.favs=S.favs.filter(k=>k!==`${a}x${b}`&&k!==`${b}x${a}`);if(!quiet)toast(`${a} × ${b} 즐겨찾기에서 뺐어요`);}
+  else{S.favs.push(`${a}x${b}`);if(!quiet)toast(`★ ${a} × ${b} 즐겨찾기에 넣었어요`);}
+  save();
+}
+const favPairs=()=>S.favs.map(k=>k.split('x').map(Number));
 
 /* ---------- 진도 ---------- */
 const danOpen=n=>n===2||S.dans[n-1].stars>0;
@@ -317,7 +339,7 @@ function beep(ok){
 const $app=document.getElementById('app');
 let CB={},cbn=0;
 const cb=fn=>{const id='c'+(++cbn);CB[id]=fn;return id;};
-function view(fn){stopTimer();CB={};$app.innerHTML=fn();window.scrollTo(0,0);}
+function view(fn,keep){stopTimer();CB={};$app.innerHTML=fn();if(!keep)window.scrollTo(0,0);}
 $app.addEventListener('click',e=>{
   const k=e.target.closest('[data-k]');if(k){press(k.dataset.k);return;}
   const b=e.target.closest('[data-cb]');if(b&&CB[b.dataset.cb])CB[b.dataset.cb](b);
@@ -344,6 +366,9 @@ function home(){
   </div>
   ${weak.length?`<button class="item" data-cb="${cb(startWeak)}"><div class="ico" style="background:var(--bad-soft);color:var(--bad)">!</div>
     <div class="txt"><b>약점 복습 (${weak.length}개)</b><span>자주 틀린 문제만 모아서 다시</span></div><span class="st">›</span></button>`:''}
+
+  <button class="item" data-cb="${cb(showFavs)}"><div class="ico" style="color:var(--gold)">★</div>
+    <div class="txt"><b>즐겨찾기 구구단 (${S.favs.length}개)</b><span>${S.favs.length?'못 외운 것만 모아서 반복해서 보기':'못 외우는 구구단을 ☆로 모아 두세요'}</span></div><span class="st">›</span></button>
 
   <h2>암산 훈련장 · 언제든 열려 있어요</h2>
   ${DRILLS.map(d=>{const st=drillSt(d.id);return`<button class="item" data-cb="${cb(()=>showDrill(d.id))}">
@@ -378,7 +403,7 @@ function lockedMsg(t){toast('🔒 '+t);}
 /* 단 외우기 화면 */
 function showDan(n){
   const d=S.dans[n];let hide=false;
-  const draw=()=>view(()=>`${topbar(true)}
+  const draw=keep=>view(()=>`${topbar(true)}
     <div class="card">
       <h3>${n}단</h3>
       <div class="muted">${n>2?`새로 외울 것 <b>${10-n}개</b> · 나머지는 앞 단에서 이미 배웠어요 (곱셈은 순서를 바꿔도 같아요)`:'첫 단! 천천히 소리 내서 읽어 보세요'}</div>
@@ -390,12 +415,52 @@ function showDan(n){
       <div class="tip">💡 ${TIPS[n]}</div>
       <div class="table">${Array.from({length:9},(_,i)=>i+1).map(b=>{const known=b>1&&b<n;
         return`<div class="fact ${known?'known':''}"><div>${n} × ${b}${known?`<small>${b}단에서 배움</small>`:''}</div>
-        <div class="ans ${hide?'hid':''}">${n*b}</div></div>`;}).join('')}</div>
-      <div class="row" style="margin-top:12px"><button class="btn line small" data-cb="${cb(()=>{hide=!hide;draw();})}">${hide?'답 보이기':'답 가리고 외워보기'}</button></div>
+        <button class="favbtn ${favHas(n,b)?'on':''}" aria-label="${n} 곱하기 ${b} 즐겨찾기" data-cb="${cb(()=>{favToggle(n,b);draw(true);})}">${favHas(n,b)?'★':'☆'}</button><div class="ans ${hide?'hid':''}">${n*b}</div></div>`;}).join('')}</div>
+      <div class="muted" style="margin-top:8px">☆ 를 누르면 즐겨찾기에 모여서 따로 반복할 수 있어요</div>
+      <div class="row" style="margin-top:12px"><button class="btn line small" data-cb="${cb(()=>{hide=!hide;draw(true);})}">${hide?'답 보이기':'답 가리고 외워보기'}</button></div>
     </div>
     <button class="btn" data-cb="${cb(()=>startPractice(n))}">${d.learned?'② 순서대로 연습':'다 외웠어요 → 연습하기'}</button>
-    ${d.practiced?`<button class="btn ghost" style="margin-top:8px" data-cb="${cb(()=>startTest(n))}">③ 시험 보기 ${d.stars?'(다시 도전)':''}</button>`:''}`);
+    ${d.practiced?`<button class="btn ghost" style="margin-top:8px" data-cb="${cb(()=>startTest(n))}">③ 시험 보기 ${d.stars?'(다시 도전)':''}</button>`:''}`,keep);
   draw();
+}
+
+/* 즐겨찾기 화면 */
+function showFavs(){
+  const draw=keep=>view(()=>`${topbar(true)}
+    <div class="card"><h3>★ 즐겨찾기 구구단</h3>
+      <div class="muted">못 외운 구구단만 모아서 계속 반복해요. 칩을 누르면 목록에서 빠져요.</div>
+      ${S.favs.length?`<div class="favlist">${favPairs().map(([a,b])=>`<button class="favchip" aria-label="${a} 곱하기 ${b} 빼기" data-cb="${cb(()=>{favToggle(a,b);draw(true);})}">${a} × ${b} = <b>${a*b}</b><span aria-hidden="true">✕</span></button>`).join('')}</div>`
+        :`<div class="tip" style="margin-top:12px">아직 비어 있어요. 아래 표에서 못 외우는 것을 눌러 보세요. 단 외우기 화면의 ☆, 틀린 문제에서도 넣을 수 있어요.</div>`}
+    </div>
+    ${S.favs.length?`<button class="btn" data-cb="${cb(showFlashcards)}">카드로 반복해서 보기</button>
+      <button class="btn ghost" style="margin-top:8px" data-cb="${cb(startFavPractice)}">반복 연습 (한 문제씩 2번)</button>`:''}
+    <h2>표에서 골라 넣기</h2>
+    <div class="card">${DANS.map(n=>`<div class="pkrow"><span>${n}단</span>${Array.from({length:9},(_,i)=>i+1).map(b=>`<button class="pk ${favHas(n,b)?'on':''}" aria-label="${n} 곱하기 ${b}" data-cb="${cb(()=>{favToggle(n,b,true);draw(true);})}">${b}</button>`).join('')}</div>`).join('')}
+      <div class="muted" style="margin-top:8px">숫자는 곱하는 수예요. 예: 7단 줄의 8 = 7 × 8</div></div>`,keep);
+  draw();
+}
+function showFlashcards(){
+  let deck=[],seen=0,shown=false,cur=null;
+  const next=()=>{if(!S.favs.length){showFavs();return;}
+    if(!deck.length)deck=shuffle(favPairs());cur=deck.shift();shown=false;draw();};
+  const draw=()=>view(()=>`<div class="qhead"><button class="iconbtn" aria-label="닫기" data-cb="${cb(showFavs)}">✕</button>
+      <div class="qtitle" style="flex:1;margin:0">즐겨찾기 카드 · ${seen}장 봤어요</div></div>
+    <button class="card qbox flashcard" data-cb="${cb(()=>{shown=!shown;draw();})}">
+      <div class="q">${cur[0]} × ${cur[1]}</div>
+      <div class="ansline" style="border-color:transparent">${shown?cur[0]*cur[1]:'<span class="muted" style="font-size:16px;font-weight:600">눌러서 답 보기</span>'}</div></button>
+    <div class="row"><button class="btn ghost" data-cb="${cb(()=>{deck.splice(Math.min(2,deck.length),0,cur);seen++;next();})}">한 번 더 볼래요</button>
+      <button class="btn" data-cb="${cb(()=>{seen++;next();})}">외웠어요 →</button></div>
+    <div class="muted" style="text-align:center;margin-top:12px">카드는 끝없이 섞여서 다시 나와요. 소리 내서 읽으면 더 잘 외워져요.<br>"한 번 더 볼래요"를 누른 카드는 곧 다시 나와요.</div>`);
+  next();
+}
+function startFavPractice(){
+  let ps=shuffle(favPairs());if(!ps.length){showFavs();return;}
+  if(ps.length>20)ps=ps.slice(0,20);
+  const items=shuffle(ps.flatMap(([a,b])=>[factItem(a,b),factItem(a,b)]));
+  runQuiz({title:'즐겨찾기 반복 연습',items,mode:'practice',onDone:r=>{
+    showResult({title:'즐겨찾기 반복 연습',r,newStars:null,
+      msg:r.wrong?'틀린 건 다시 풀어서 다 맞혔어요. 내일 또 해 봐요!':'전부 한 번에 맞혔어요! 다 외운 건 즐겨찾기에서 빼도 돼요',
+      next:{label:'카드로 다시 보기',fn:showFlashcards},retry:startFavPractice});}});
 }
 
 /* 비법 화면 */
@@ -497,8 +562,11 @@ function submit(){
   }else{
     Q.wrong++;if(!Q.mistakes.some(m=>m.q===it.q))Q.mistakes.push(it);
     if(Q.mode==='practice')Q.queue.push(Object.assign({},it,{retry:true}));
-    fb.className='fb bad';fb.innerHTML=`아쉬워요. 정답은 <b>${it.q} = ${it.a}</b>`;card.classList.add('flash-bad');
-    setTimeout(advance,Q.mode==='speed'?900:1700);
+    const canFav=it.x&&Q.mode!=='speed';
+    fb.className='fb bad';fb.innerHTML=`아쉬워요. 정답은 <b>${it.q} = ${it.a}</b>`+(canFav?(favHas(it.x,it.y)?'<br><span class="muted">★ 즐겨찾기에 있어요</span>':
+      `<br><button class="hintbtn" data-cb="${cb(b=>{if(!favHas(it.x,it.y))favToggle(it.x,it.y,true);b.textContent='★ 즐겨찾기에 넣었어요';b.disabled=true;})}">☆ 즐겨찾기에 넣기</button>`):'');
+    card.classList.add('flash-bad');
+    setTimeout(advance,Q.mode==='speed'?900:(canFav?2300:1700));
   }
 }
 function advance(){
@@ -515,7 +583,7 @@ function finishQ(){
 }
 
 /* ---------- 문제 만들기 ---------- */
-const factItem=(a,b)=>({q:`${a} × ${b}`,a:a*b,key:fkey(a,b)});
+const factItem=(a,b)=>({q:`${a} × ${b}`,a:a*b,key:fkey(a,b),x:a,y:b});
 function startPractice(n){
   S.dans[n].learned=true;save();
   const items=Array.from({length:9},(_,i)=>{const b=i+1;return Object.assign(factItem(n,b),{hint:b===1?`어떤 수에 1을 곱하면 그대로예요`:`앞의 답 ${n*(b-1)} 에 ${n}을 더하면 돼요`});});
@@ -583,7 +651,8 @@ function showResult(o){
       <div class="score">${o.speed?r.correct+'개':r.correct+' / '+r.total}</div>
       <div class="muted">${o.speed?`틀림 ${r.wrong}개`:`평균 ${r.avg.toFixed(1)}초`}${o.prev!==undefined&&o.newStars>o.prev?' · 별 기록 갱신!':''}</div>
       <p style="font-weight:700;margin:12px 0 0">${o.msg}</p>
-      ${r.mistakes.length?`<div style="text-align:left;margin-top:14px"><div class="muted">틀린 문제</div><div class="mist">${r.mistakes.map(m=>`<span>${m.q} = ${m.a}</span>`).join('')}</div></div>`:''}
+      ${r.mistakes.length?`<div style="text-align:left;margin-top:14px"><div class="muted">틀린 문제</div><div class="mist">${r.mistakes.map(m=>m.x?`<button class="${favHas(m.x,m.y)?'on':''}" data-cb="${cb(b=>{favToggle(m.x,m.y);const on=favHas(m.x,m.y);b.classList.toggle('on',on);b.textContent=`${m.q} = ${m.a} ${on?'★':'☆'}`;})}">${m.q} = ${m.a} ${favHas(m.x,m.y)?'★':'☆'}</button>`:`<span>${m.q} = ${m.a}</span>`).join('')}</div>
+      ${r.mistakes.some(m=>m.x)?`<div class="muted" style="margin-top:6px">눌러서 즐겨찾기에 넣거나 빼요</div><button class="btn ghost small" style="margin-top:8px" data-cb="${cb(b=>{let c=0;r.mistakes.forEach(m=>{if(m.x&&!favHas(m.x,m.y)){favToggle(m.x,m.y,true);c++;}});toast(c?`★ ${c}개를 즐겨찾기에 넣었어요`:'이미 모두 들어 있어요');document.querySelectorAll('.mist button').forEach(x=>{x.classList.add('on');x.textContent=x.textContent.replace('☆','★');});})}">틀린 문제 모두 즐겨찾기</button>`:''}</div>`:''}
     </div>
     <button class="btn" data-cb="${cb(o.next.fn)}">${o.next.label}</button>
     <div class="row" style="margin-top:8px"><button class="btn ghost small" data-cb="${cb(o.retry)}">다시 하기</button><button class="btn line small" data-cb="${cb(home)}">홈으로</button></div>
